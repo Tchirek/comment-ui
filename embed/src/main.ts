@@ -34,7 +34,7 @@ let loading = false;
 let loadAgain = false;
 let previewing = false;
 const parentLocation = document.referrer || window.location.ancestorOrigins?.[0] || '';
-const parentOrigin = parentLocation ? new URL(parentLocation).origin : '';
+let parentOrigin = parentLocation ? new URL(parentLocation).origin : '';
 
 const app = document.getElementById('app')!;
 app.innerHTML = `
@@ -400,6 +400,7 @@ function setPreview(visible: boolean): void {
 
 window.addEventListener('message', (event) => {
   if (!ALLOWED_PARENT_ORIGINS.has(event.origin) || event.source !== window.parent) return;
+  parentOrigin = event.origin;
   const data = event.data as { type?: string; imageId?: string; viewerId?: string; token?: string };
   if (data.type === 'normalpics:context' && data.imageId && data.viewerId) {
     const changed = imageId !== data.imageId;
