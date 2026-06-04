@@ -17,6 +17,7 @@ interface CommentItem {
   rootId: string;
   parentId: string | null;
   nickname: string;
+  operatingSystem: string;
   content: string;
   html: string;
   createdAt: number;
@@ -46,8 +47,10 @@ app.innerHTML = `
   <section class="composer">
     <input class="nickname" maxlength="32" autocomplete="nickname" placeholder="昵称">
     <div class="reply-target" hidden></div>
-    <textarea maxlength="2000" placeholder="写下评论，支持 Markdown"></textarea>
-    <div class="preview markdown" hidden></div>
+    <div class="editor-surface">
+      <textarea maxlength="2000" placeholder="写下评论，支持 Markdown"></textarea>
+      <div class="preview markdown" hidden></div>
+    </div>
     <div class="composer-actions">
       <button class="text-button preview-toggle" type="button">预览</button>
       <span class="status" role="status"></span>
@@ -69,6 +72,16 @@ const submit = app.querySelector<HTMLButtonElement>('.submit')!;
 const previewToggle = app.querySelector<HTMLButtonElement>('.preview-toggle')!;
 nickname.value = localStorage.getItem(NICKNAME_KEY) || '';
 
+class ApiError extends Error {
+  readonly retryAfterMs: number | null;
+
+  constructor(message: string, retryAfterMs?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.retryAfterMs = Number.isFinite(retryAfterMs) ? Number(retryAfterMs) : null;
+  }
+}
+
 function postParent(message: Record<string, unknown>): void {
   if (!parentOrigin || !ALLOWED_PARENT_ORIGINS.has(parentOrigin)) return;
   window.parent.postMessage(message, parentOrigin);
@@ -85,8 +98,8 @@ function headers(includeAdmin = false): HeadersInit {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_ORIGIN}${path}`, init);
-  const body = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new Error(body.error || `request_${response.status}`);
+  const body = await response.json().catch(() => ({})) as T & { error?: string; retryAfterMs?: number };
+  if (!response.ok) throw new ApiError(body.error || `request_${response.status}`, body.retryAfterMs);
   return body;
 }
 
@@ -110,6 +123,65 @@ function formatTime(value: number): string {
     hour: '2-digit',
     minute: '2-digit'
   }).format(new Date(value));
+}
+
+function macOSName(major: number): string {
+  if (major === 15) return 'macOS 15 Sequoia';
+  if (major === 14) return 'macOS 14 Sonoma';
+  if (major === 13) return 'macOS 13 Ventura';
+  if (major === 12) return 'macOS 12 Monterey';
+  return major > 0 ? `macOS ${major}` : 'macOS';
+}
+
+async function detectOperatingSystem(): Promise<string> {
+  const ua = navigator.userAgent;
+  const uaData = (navigator as Navigator & {
+    userAgentData?: {
+      platform?: string;
+      getHighEntropyValues?: (hints: string[]) => Promise<{ platform?: string; platformVersion?: string }>;
+    };
+  }).userAgentData;
+  let platform = uaData?.platform || navigator.platform || '';
+  let platformVersion = '';
+  try {
+    const values = await uaData?.getHighEntropyValues?.(['platform', 'platformVersion']);
+    platform = values?.platform || platform;
+    platformVersion = values?.platformVersion || '';
+  } catch {
+    // Reduced user-agent data remains sufficient for the fallback detector.
+  }
+
+  const android = ua.match(/Android[ /](\d{1,2})/i);
+  if (android) return `Android ${android[1]}`;
+  const ios = ua.match(/(?:iPhone )?OS (\d{1,2})[_\d]*/i);
+  if (/iPad/i.test(ua) && ios) return `iPadOS ${ios[1]}`;
+  if (ios) return `iOS ${ios[1]}`;
+  if (/Windows/i.test(platform) || /Windows NT/i.test(ua)) {
+    const platformMajor = Number.parseInt(platformVersion.split('.')[0] || '', 10);
+    if (Number.isFinite(platformMajor)) return platformMajor >= 13 ? 'Windows 11' : 'Windows 10';
+    if (/Windows NT 6\.3/i.test(ua)) return 'Windows 8.1';
+    if (/Windows NT 6\.2/i.test(ua)) return 'Windows 8';
+    if (/Windows NT 6\.1/i.test(ua)) return 'Windows 7';
+    return 'Windows 10';
+  }
+  if (/CrOS/i.test(ua)) return 'ChromeOS';
+  if (/Ubuntu/i.test(ua)) return 'Ubuntu';
+  if (/Arch(?: Linux)?/i.test(ua)) return 'Arch Linux';
+  if (/Deepin/i.test(ua)) return 'Deepin';
+  if (/Fedora/i.test(ua)) return 'Fedora';
+  if (/macOS|Mac/i.test(platform) || /Mac OS X/i.test(ua)) {
+    const highEntropyMajor = Number.parseInt(platformVersion.split('.')[0] || '', 10);
+    const uaMajor = Number.parseInt(ua.match(/Mac OS X (\d{1,2})/)?.[1] || '', 10);
+    return macOSName(Number.isFinite(highEntropyMajor) ? highEntropyMajor : uaMajor);
+  }
+  if (/Linux/i.test(platform) || /Linux/i.test(ua)) return 'Linux';
+  return '未知系统';
+}
+
+function formatCooldown(value: number | null): string {
+  const milliseconds = Math.max(1_000, value || 0);
+  const hours = Math.ceil(milliseconds / 3_600_000);
+  return hours >= 24 ? `约 ${Math.ceil(hours / 24)} 天后` : `约 ${hours} 小时后`;
 }
 
 function nicknameInitial(value: string): string {
@@ -156,7 +228,10 @@ function commentNode(item: CommentItem, reply = false): HTMLElement {
   const time = document.createElement('time');
   time.dateTime = new Date(item.createdAt).toISOString();
   time.textContent = formatTime(item.createdAt);
-  head.append(name, time);
+  const operatingSystem = document.createElement('span');
+  operatingSystem.className = 'comment-os';
+  operatingSystem.textContent = item.operatingSystem || '未知系统';
+  head.append(name, operatingSystem, time);
 
   const body = document.createElement('div');
   body.className = 'markdown';
@@ -236,7 +311,7 @@ async function load(): Promise<void> {
       { headers: headers() }
     );
     if (requestedImageId === imageId) comments = response.items;
-    postParent({ type: 'comment-ui:loaded', imageId: requestedImageId });
+    postParent({ type: 'comment-ui:loaded', imageId: requestedImageId, commentCount: response.items.length });
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : '加载失败';
   } finally {
@@ -256,7 +331,7 @@ async function publish(): Promise<void> {
   submit.disabled = true;
   status.textContent = '';
   try {
-    localStorage.setItem(NICKNAME_KEY, name);
+    const operatingSystem = await detectOperatingSystem();
     await request('/api/comment', {
       method: 'POST',
       headers: headers(),
@@ -264,16 +339,22 @@ async function publish(): Promise<void> {
         imageId,
         nickname: name,
         content,
-        parentId: replyTo?.id || null
+        parentId: replyTo?.id || null,
+        operatingSystem
       })
     });
+    localStorage.setItem(NICKNAME_KEY, name);
     textarea.value = '';
     replyTo = null;
     replyTarget.hidden = true;
     setPreview(false);
     await load();
   } catch (error) {
-    status.textContent = error instanceof Error && error.message === 'rate_limited' ? '发送太快，请稍后再试' : '发布失败';
+    if (error instanceof ApiError && error.message === 'nickname_change_cooldown') {
+      status.textContent = `您的昵称近期已修改过，${formatCooldown(error.retryAfterMs)}可再次修改`;
+    } else {
+      status.textContent = error instanceof Error && error.message === 'rate_limited' ? '发送太快，请稍后再试' : '发布失败';
+    }
   } finally {
     submit.disabled = false;
   }

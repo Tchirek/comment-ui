@@ -14,6 +14,8 @@ comment product derived from the interaction model of Sodesu.
   liked comments by like count, then unliked comments by recency.
 - Added deterministic nickname-initial avatars, icon-only heart likes, and a
   hidden administrator verification trigger.
+- Added normalized operating-system labels and a privacy-preserving,
+  device-bound nickname-change cooldown.
 - Added strict `postMessage` origin checks for iframe integration.
 - Replaced product attribution with an underlined `Powered by Sodesu v0.5.2`
   link to this public fork.

@@ -61,13 +61,25 @@ input, textarea {
 }
 
 .nickname { width: min(180px, 60%); padding: 9px 10px; font-size: 12px; }
+.editor-surface {
+  position: relative;
+  width: 100%;
+  height: 112px;
+}
 textarea {
   width: 100%;
-  min-height: 96px;
-  resize: vertical;
+  height: 100%;
+  min-height: 0;
+  resize: none;
   padding: 11px;
   font-size: 12px;
   line-height: 1.6;
+}
+.editor-surface > .preview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
 }
 
 input:focus, textarea:focus { border-color: rgba(255, 255, 255, 0.24); }
@@ -124,9 +136,17 @@ input:focus, textarea:focus { border-color: rgba(255, 255, 255, 0.24); }
 }
 .comment.reply .comment-avatar { width: 26px; height: 26px; font-size: 10px; }
 .comment-main { min-width: 0; }
-.comment-head { min-height: 30px; display: flex; align-items: center; gap: 9px; }
+.comment-head { min-height: 30px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; }
 .comment.reply .comment-head { min-height: 26px; }
 .comment-head strong { font-size: 12px; font-weight: 560; }
+.comment-os {
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 9px;
+  line-height: 1;
+}
 .comment-head time { color: rgba(255, 255, 255, 0.32); font-size: 9px; }
 .comment-actions { margin-top: 7px; gap: 2px; }
 .comment-actions .like-button {
@@ -168,7 +188,7 @@ input:focus, textarea:focus { border-color: rgba(255, 255, 255, 0.24); }
 .markdown pre, .markdown code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .markdown pre { overflow: auto; padding: 10px; border-radius: 7px; background: rgba(255, 255, 255, 0.05); }
 .markdown blockquote { margin: 8px 0; padding-left: 10px; border-left: 2px solid rgba(255, 255, 255, 0.16); }
-.preview { min-height: 96px; padding: 10px; border-radius: 9px; background: rgba(255, 255, 255, 0.04); }
+.preview { padding: 10px; border-radius: 9px; background: rgba(255, 255, 255, 0.04); }
 .preview-error, .empty { color: rgba(255, 255, 255, 0.38); font-size: 11px; }
 .empty { padding: 36px 0; text-align: center; }
 
@@ -181,5 +201,5 @@ footer a:hover { color: rgba(255, 255, 255, 0.62); }
   header { min-height: 52px; }
   .composer { padding: 12px; }
   .comment-list { padding-inline: 12px; }
-  textarea { min-height: 82px; }
+  .editor-surface { height: 98px; }
 }
