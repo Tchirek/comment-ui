@@ -29,7 +29,6 @@ let viewerId = '';
 let adminToken = '';
 let replyTo: CommentItem | null = null;
 let comments: CommentItem[] = [];
-let sort = 'latest';
 let loading = false;
 let loadAgain = false;
 let previewing = false;
@@ -39,14 +38,8 @@ const parentOrigin = parentLocation ? new URL(parentLocation).origin : '';
 const app = document.getElementById('app')!;
 app.innerHTML = `
   <header>
-    <strong>评论</strong>
+    <strong class="comment-title">评论</strong>
     <div class="header-actions">
-      <select aria-label="排序">
-        <option value="latest">最新</option>
-        <option value="oldest">最早</option>
-        <option value="popular">喜欢最多</option>
-      </select>
-      <button class="text-button admin" type="button">管理</button>
       <button class="icon-button close" type="button" aria-label="关闭">×</button>
     </div>
   </header>
@@ -62,10 +55,10 @@ app.innerHTML = `
     </div>
   </section>
   <section class="comment-list" aria-live="polite"></section>
-  <footer><a href="https://github.com/Tchirek/comment-ui" target="_blank" rel="noreferrer">源代码</a></footer>
+  <footer>Powered by <a href="https://github.com/Tchirek/comment-ui" target="_blank" rel="noreferrer">Sodesu</a> v0.5.2</footer>
 `;
 
-const sortSelect = app.querySelector<HTMLSelectElement>('select')!;
+const commentTitle = app.querySelector<HTMLElement>('.comment-title')!;
 const nickname = app.querySelector<HTMLInputElement>('.nickname')!;
 const textarea = app.querySelector<HTMLTextAreaElement>('textarea')!;
 const preview = app.querySelector<HTMLElement>('.preview')!;
@@ -74,7 +67,6 @@ const status = app.querySelector<HTMLElement>('.status')!;
 const list = app.querySelector<HTMLElement>('.comment-list')!;
 const submit = app.querySelector<HTMLButtonElement>('.submit')!;
 const previewToggle = app.querySelector<HTMLButtonElement>('.preview-toggle')!;
-const adminButton = app.querySelector<HTMLButtonElement>('.admin')!;
 nickname.value = localStorage.getItem(NICKNAME_KEY) || '';
 
 function postParent(message: Record<string, unknown>): void {
@@ -120,11 +112,43 @@ function formatTime(value: number): string {
   }).format(new Date(value));
 }
 
+function nicknameInitial(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '?';
+  if ('Segmenter' in Intl) {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    return segmenter.segment(trimmed)[Symbol.iterator]().next().value?.segment || '?';
+  }
+  return Array.from(trimmed)[0] || '?';
+}
+
+function nicknameHue(value: string): number {
+  let hash = 0;
+  for (const character of value) hash = ((hash << 5) - hash + character.codePointAt(0)!) | 0;
+  return Math.abs(hash) % 360;
+}
+
+function commentRank(a: CommentItem, b: CommentItem): number {
+  const aHasLikes = a.likeCount > 0;
+  const bHasLikes = b.likeCount > 0;
+  if (aHasLikes !== bHasLikes) return aHasLikes ? -1 : 1;
+  if (aHasLikes && a.likeCount !== b.likeCount) return b.likeCount - a.likeCount;
+  return b.createdAt - a.createdAt;
+}
+
 function commentNode(item: CommentItem, reply = false): HTMLElement {
   const article = document.createElement('article');
   article.className = reply ? 'comment reply' : 'comment';
   article.dataset.id = item.id;
 
+  const avatar = document.createElement('div');
+  avatar.className = 'comment-avatar';
+  avatar.textContent = nicknameInitial(item.nickname);
+  avatar.style.setProperty('--avatar-hue', String(nicknameHue(item.nickname)));
+  avatar.setAttribute('aria-hidden', 'true');
+
+  const main = document.createElement('div');
+  main.className = 'comment-main';
   const head = document.createElement('div');
   head.className = 'comment-head';
   const name = document.createElement('strong');
@@ -151,8 +175,11 @@ function commentNode(item: CommentItem, reply = false): HTMLElement {
   });
   const likeButton = document.createElement('button');
   likeButton.type = 'button';
-  likeButton.className = item.likedByMe ? 'liked' : '';
-  likeButton.textContent = item.likeCount > 0 ? `喜欢 ${item.likeCount}` : '喜欢';
+  likeButton.className = `like-button${item.likedByMe ? ' liked' : ''}`;
+  likeButton.title = '喜欢';
+  likeButton.setAttribute('aria-label', '喜欢');
+  likeButton.setAttribute('aria-pressed', item.likedByMe ? 'true' : 'false');
+  likeButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12.6 12 20l-7.5-7.4A5 5 0 0 1 12 6a5 5 0 0 1 7.5 6.6z"/></svg>${item.likeCount > 0 ? `<span>${item.likeCount}</span>` : ''}`;
   likeButton.addEventListener('click', () => void toggleLike(item));
   actions.append(replyButton, likeButton);
 
@@ -165,13 +192,14 @@ function commentNode(item: CommentItem, reply = false): HTMLElement {
     actions.append(deleteButton);
   }
 
-  article.append(head, body, actions);
+  main.append(head, body, actions);
+  article.append(avatar, main);
   return article;
 }
 
 function render(): void {
   list.replaceChildren();
-  const roots = comments.filter((item) => item.parentId === null);
+  const roots = comments.filter((item) => item.parentId === null).sort(commentRank);
   const rootOrder = new Map(roots.map((item, index) => [item.id, index]));
   for (const root of roots) {
     const thread = document.createElement('div');
@@ -204,7 +232,7 @@ async function load(): Promise<void> {
   status.textContent = '';
   try {
     const response = await request<{ items: CommentItem[] }>(
-      `/api/comment?imageId=${encodeURIComponent(imageId)}&sort=${encodeURIComponent(sort)}`,
+      `/api/comment?imageId=${encodeURIComponent(imageId)}`,
       { headers: headers() }
     );
     if (requestedImageId === imageId) comments = response.items;
@@ -276,9 +304,8 @@ async function deleteComment(item: CommentItem): Promise<void> {
     await load();
   } catch {
     adminToken = '';
-    adminButton.textContent = '管理';
     render();
-    status.textContent = '管理权限已失效';
+    status.textContent = '验证已失效';
   }
 }
 
@@ -307,17 +334,31 @@ window.addEventListener('message', (event) => {
   }
   if (data.type === 'normalpics:admin-token' && data.token) {
     adminToken = data.token;
-    adminButton.textContent = '管理中';
     render();
   }
 });
 
-sortSelect.addEventListener('change', () => {
-  sort = sortSelect.value;
-  void load();
-});
 app.querySelector('.close')!.addEventListener('click', () => postParent({ type: 'comment-ui:close' }));
-adminButton.addEventListener('click', () => postParent({ type: 'comment-ui:request-admin' }));
+let adminTapCount = 0;
+let adminTapTimer = 0;
+commentTitle.addEventListener('click', () => {
+  adminTapCount += 1;
+  window.clearTimeout(adminTapTimer);
+  if (adminTapCount >= 5) {
+    adminTapCount = 0;
+    postParent({ type: 'comment-ui:request-admin' });
+    return;
+  }
+  adminTapTimer = window.setTimeout(() => {
+    adminTapCount = 0;
+  }, 1_500);
+});
+window.addEventListener('keydown', (event) => {
+  if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 'm') {
+    event.preventDefault();
+    postParent({ type: 'comment-ui:request-admin' });
+  }
+});
 replyTarget.addEventListener('click', () => {
   replyTo = null;
   replyTarget.hidden = true;

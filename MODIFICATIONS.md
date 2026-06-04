@@ -8,10 +8,15 @@ comment product derived from the interaction model of Sodesu.
 
 - Removed login, profile, visitor editing, and attachment upload from the
   embedded product.
-- Preserved Markdown preview, sorting, two-level replies, likes, and
-  administrator deletion.
+- Preserved Markdown preview, two-level replies, likes, and administrator
+  deletion.
+- Replaced visible sorting controls with a fixed ranking that prioritizes
+  liked comments by like count, then unliked comments by recency.
+- Added deterministic nickname-initial avatars, icon-only heart likes, and a
+  hidden administrator verification trigger.
 - Added strict `postMessage` origin checks for iframe integration.
-- Replaced product attribution with a source-code link to this public fork.
+- Replaced product attribution with an underlined `Powered by Sodesu v0.5.2`
+  link to this public fork.
 
 ## Build
 
