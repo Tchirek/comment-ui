@@ -33,6 +33,14 @@ let comments: CommentItem[] = [];
 let loading = false;
 let loadAgain = false;
 let previewing = false;
+let pullTouchId: number | null = null;
+let pullAnchorX = 0;
+let pullAnchorY = 0;
+let pullLastY = 0;
+let pullLastAt = 0;
+let pullVelocityY = 0;
+let pullAtTop = false;
+let pullingPanel = false;
 const parentLocation = document.referrer || window.location.ancestorOrigins?.[0] || '';
 let parentOrigin = parentLocation ? new URL(parentLocation).origin : '';
 
@@ -85,6 +93,20 @@ class ApiError extends Error {
 function postParent(message: Record<string, unknown>): void {
   if (!parentOrigin || !ALLOWED_PARENT_ORIGINS.has(parentOrigin)) return;
   window.parent.postMessage(message, parentOrigin);
+}
+
+function scrollTop(): number {
+  return document.scrollingElement?.scrollTop || window.scrollY || 0;
+}
+
+function resetPanelPull(notify = false): void {
+  if (notify && pullingPanel) {
+    postParent({ type: 'comment-ui:pull', phase: 'cancel', deltaY: 0, velocityY: 0 });
+  }
+  pullTouchId = null;
+  pullAtTop = false;
+  pullingPanel = false;
+  pullVelocityY = 0;
 }
 
 function headers(includeAdmin = false): HeadersInit {
@@ -450,5 +472,78 @@ submit.addEventListener('click', () => void publish());
 textarea.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void publish();
 });
+
+document.addEventListener('touchstart', (event) => {
+  if (event.touches.length !== 1) {
+    resetPanelPull(true);
+    return;
+  }
+  if (event.target instanceof Element && event.target.closest('input, textarea, button, a')) {
+    resetPanelPull();
+    return;
+  }
+  const touch = event.touches[0];
+  pullTouchId = touch.identifier;
+  pullAnchorX = touch.clientX;
+  pullAnchorY = touch.clientY;
+  pullLastY = touch.clientY;
+  pullLastAt = performance.now();
+  pullVelocityY = 0;
+  pullAtTop = scrollTop() <= 1;
+  pullingPanel = false;
+}, { capture: true, passive: true });
+
+document.addEventListener('touchmove', (event) => {
+  if (pullTouchId === null || event.touches.length !== 1) return;
+  const touch = Array.from(event.touches).find((item) => item.identifier === pullTouchId);
+  if (!touch) return;
+
+  const now = performance.now();
+  const atTop = scrollTop() <= 1;
+  if (!atTop) {
+    pullAtTop = false;
+    pullAnchorX = touch.clientX;
+    pullAnchorY = touch.clientY;
+    pullLastY = touch.clientY;
+    pullLastAt = now;
+    return;
+  }
+  if (!pullAtTop) {
+    pullAtTop = true;
+    pullAnchorX = touch.clientX;
+    pullAnchorY = touch.clientY;
+    pullLastY = touch.clientY;
+    pullLastAt = now;
+    return;
+  }
+
+  const deltaX = touch.clientX - pullAnchorX;
+  const deltaY = touch.clientY - pullAnchorY;
+  if (!pullingPanel) {
+    if (deltaY <= 7 || Math.abs(deltaY) <= Math.abs(deltaX) * 1.15) return;
+    pullingPanel = true;
+  }
+
+  event.preventDefault();
+  const elapsed = Math.max(8, now - pullLastAt);
+  pullVelocityY = (touch.clientY - pullLastY) / elapsed;
+  pullLastY = touch.clientY;
+  pullLastAt = now;
+  postParent({ type: 'comment-ui:pull', phase: 'move', deltaY, velocityY: pullVelocityY });
+}, { capture: true, passive: false });
+
+document.addEventListener('touchend', (event) => {
+  if (pullTouchId === null) return;
+  const touch = Array.from(event.changedTouches).find((item) => item.identifier === pullTouchId);
+  if (!touch) return;
+  const deltaY = Math.max(0, touch.clientY - pullAnchorY);
+  if (pullingPanel) {
+    event.preventDefault();
+    postParent({ type: 'comment-ui:pull', phase: 'end', deltaY, velocityY: pullVelocityY });
+  }
+  resetPanelPull();
+}, { capture: true, passive: false });
+
+document.addEventListener('touchcancel', () => resetPanelPull(true), { capture: true });
 
 postParent({ type: 'comment-ui:ready' });
