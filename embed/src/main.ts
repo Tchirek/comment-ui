@@ -33,7 +33,8 @@ let sort = 'latest';
 let loading = false;
 let loadAgain = false;
 let previewing = false;
-const parentOrigin = document.referrer ? new URL(document.referrer).origin : '';
+const parentLocation = document.referrer || window.location.ancestorOrigins?.[0] || '';
+const parentOrigin = parentLocation ? new URL(parentLocation).origin : '';
 
 const app = document.getElementById('app')!;
 app.innerHTML = `
