@@ -41,6 +41,9 @@ let pullLastAt = 0;
 let pullVelocityY = 0;
 let pullAtTop = false;
 let pullingPanel = false;
+let pullDistance = 0;
+let pullAnimation: Animation | null = null;
+let pullResetTimer = 0;
 const parentLocation = document.referrer || window.location.ancestorOrigins?.[0] || '';
 let parentOrigin = parentLocation ? new URL(parentLocation).origin : '';
 
@@ -96,17 +99,74 @@ function postParent(message: Record<string, unknown>): void {
 }
 
 function scrollTop(): number {
-  return document.scrollingElement?.scrollTop || window.scrollY || 0;
+  return app.scrollTop;
 }
 
-function resetPanelPull(notify = false): void {
-  if (notify && pullingPanel) {
-    postParent({ type: 'comment-ui:pull', phase: 'cancel', deltaY: 0, velocityY: 0 });
-  }
+function clearPanelPullState(): void {
   pullTouchId = null;
   pullAtTop = false;
   pullingPanel = false;
   pullVelocityY = 0;
+  document.documentElement.classList.remove('panel-pulling');
+}
+
+function cancelPanelPullAnimation(): void {
+  if (!pullAnimation) return;
+  pullAnimation.cancel();
+  pullAnimation = null;
+}
+
+function clearPanelPullVisual(): void {
+  window.clearTimeout(pullResetTimer);
+  pullResetTimer = 0;
+  cancelPanelPullAnimation();
+  pullDistance = 0;
+  app.style.transform = '';
+}
+
+function setPanelPull(deltaY: number): void {
+  cancelPanelPullAnimation();
+  pullDistance = Math.max(0, Math.min(window.innerHeight, deltaY));
+  app.style.transform = `translate3d(0, ${pullDistance}px, 0)`;
+}
+
+function animatePanelPull(toY: number, duration: number, onFinish?: () => void): void {
+  cancelPanelPullAnimation();
+  const fromY = pullDistance;
+  if (Math.abs(fromY - toY) < 0.1) {
+    pullDistance = toY;
+    app.style.transform = toY === 0 ? '' : `translate3d(0, ${toY}px, 0)`;
+    onFinish?.();
+    return;
+  }
+
+  const animation = app.animate([
+    { transform: `translate3d(0, ${fromY}px, 0)` },
+    { transform: `translate3d(0, ${toY}px, 0)` }
+  ], {
+    duration,
+    easing: 'cubic-bezier(.22, 1, .36, 1)',
+    fill: 'forwards'
+  });
+  pullAnimation = animation;
+  void animation.finished.then(() => {
+    if (pullAnimation !== animation) return;
+    pullAnimation = null;
+    pullDistance = toY;
+    app.style.transform = toY === 0 ? '' : `translate3d(0, ${toY}px, 0)`;
+    animation.cancel();
+    onFinish?.();
+  }).catch(() => {
+    // A new touch may intentionally interrupt the settle animation.
+  });
+}
+
+function cancelPanelPull(notify = true): void {
+  const wasPulling = pullingPanel || pullDistance > 0;
+  clearPanelPullState();
+  if (!wasPulling) return;
+  if (notify) postParent({ type: 'comment-ui:pull', phase: 'cancel' });
+  animatePanelPull(0, 180, clearPanelPullVisual);
 }
 
 function headers(includeAdmin = false): HeadersInit {
@@ -440,6 +500,10 @@ window.addEventListener('message', (event) => {
     adminToken = data.token;
     render();
   }
+  if (data.type === 'normalpics:panel-reset') {
+    clearPanelPullState();
+    clearPanelPullVisual();
+  }
 });
 
 app.querySelector('.close')!.addEventListener('click', () => postParent({ type: 'comment-ui:close' }));
@@ -475,11 +539,11 @@ textarea.addEventListener('keydown', (event) => {
 
 document.addEventListener('touchstart', (event) => {
   if (event.touches.length !== 1) {
-    resetPanelPull(true);
+    cancelPanelPull();
     return;
   }
   if (event.target instanceof Element && event.target.closest('input, textarea, button, a')) {
-    resetPanelPull();
+    cancelPanelPull(false);
     return;
   }
   const touch = event.touches[0];
@@ -500,7 +564,7 @@ document.addEventListener('touchmove', (event) => {
 
   const now = performance.now();
   const atTop = scrollTop() <= 1;
-  if (!atTop) {
+  if (!pullingPanel && !atTop) {
     pullAtTop = false;
     pullAnchorX = touch.clientX;
     pullAnchorY = touch.clientY;
@@ -518,10 +582,12 @@ document.addEventListener('touchmove', (event) => {
   }
 
   const deltaX = touch.clientX - pullAnchorX;
-  const deltaY = touch.clientY - pullAnchorY;
+  const deltaY = Math.max(0, touch.clientY - pullAnchorY);
   if (!pullingPanel) {
     if (deltaY <= 7 || Math.abs(deltaY) <= Math.abs(deltaX) * 1.15) return;
     pullingPanel = true;
+    document.documentElement.classList.add('panel-pulling');
+    postParent({ type: 'comment-ui:pull', phase: 'start' });
   }
 
   event.preventDefault();
@@ -529,7 +595,7 @@ document.addEventListener('touchmove', (event) => {
   pullVelocityY = (touch.clientY - pullLastY) / elapsed;
   pullLastY = touch.clientY;
   pullLastAt = now;
-  postParent({ type: 'comment-ui:pull', phase: 'move', deltaY, velocityY: pullVelocityY });
+  setPanelPull(deltaY);
 }, { capture: true, passive: false });
 
 document.addEventListener('touchend', (event) => {
@@ -539,11 +605,22 @@ document.addEventListener('touchend', (event) => {
   const deltaY = Math.max(0, touch.clientY - pullAnchorY);
   if (pullingPanel) {
     event.preventDefault();
-    postParent({ type: 'comment-ui:pull', phase: 'end', deltaY, velocityY: pullVelocityY });
+    const shouldClose = deltaY > Math.min(120, window.innerHeight * 0.18) || pullVelocityY > 0.5;
+    clearPanelPullState();
+    if (shouldClose) {
+      animatePanelPull(window.innerHeight + 24, 180, () => {
+        postParent({ type: 'comment-ui:pull', phase: 'closed' });
+        pullResetTimer = window.setTimeout(clearPanelPullVisual, 280);
+      });
+    } else {
+      postParent({ type: 'comment-ui:pull', phase: 'cancel' });
+      animatePanelPull(0, 200, clearPanelPullVisual);
+    }
+    return;
   }
-  resetPanelPull();
+  clearPanelPullState();
 }, { capture: true, passive: false });
 
-document.addEventListener('touchcancel', () => resetPanelPull(true), { capture: true });
+document.addEventListener('touchcancel', () => cancelPanelPull(), { capture: true });
 
 postParent({ type: 'comment-ui:ready' });
