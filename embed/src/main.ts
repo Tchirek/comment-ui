@@ -41,9 +41,10 @@ let pullLastAt = 0;
 let pullVelocityY = 0;
 let pullAtTop = false;
 let pullingPanel = false;
-let pullDistance = 0;
-let pullAnimation: Animation | null = null;
-let pullResetTimer = 0;
+let pullFrame = 0;
+let queuedPullDistance: number | null = null;
+let pullCurrentDistance = 0;
+let dragPort: MessagePort | null = null;
 const parentLocation = document.referrer || window.location.ancestorOrigins?.[0] || '';
 let parentOrigin = parentLocation ? new URL(parentLocation).origin : '';
 
@@ -102,71 +103,61 @@ function scrollTop(): number {
   return app.scrollTop;
 }
 
+function touchX(touch: Touch): number {
+  return Number.isFinite(touch.screenX) ? touch.screenX : touch.clientX;
+}
+
+function touchY(touch: Touch): number {
+  return Number.isFinite(touch.screenY) ? touch.screenY : touch.clientY;
+}
+
 function clearPanelPullState(): void {
   pullTouchId = null;
   pullAtTop = false;
   pullingPanel = false;
   pullVelocityY = 0;
+  pullCurrentDistance = 0;
   document.documentElement.classList.remove('panel-pulling');
 }
 
-function cancelPanelPullAnimation(): void {
-  if (!pullAnimation) return;
-  pullAnimation.cancel();
-  pullAnimation = null;
-}
-
-function clearPanelPullVisual(): void {
-  window.clearTimeout(pullResetTimer);
-  pullResetTimer = 0;
-  cancelPanelPullAnimation();
-  pullDistance = 0;
-  app.style.transform = '';
-}
-
-function setPanelPull(deltaY: number): void {
-  cancelPanelPullAnimation();
-  pullDistance = Math.max(0, Math.min(window.innerHeight, deltaY));
-  app.style.transform = `translate3d(0, ${pullDistance}px, 0)`;
-}
-
-function animatePanelPull(toY: number, duration: number, onFinish?: () => void): void {
-  cancelPanelPullAnimation();
-  const fromY = pullDistance;
-  if (Math.abs(fromY - toY) < 0.1) {
-    pullDistance = toY;
-    app.style.transform = toY === 0 ? '' : `translate3d(0, ${toY}px, 0)`;
-    onFinish?.();
+function sendPull(message: Record<string, unknown>): void {
+  if (dragPort) {
+    dragPort.postMessage(message);
     return;
   }
+  postParent(message);
+}
 
-  const animation = app.animate([
-    { transform: `translate3d(0, ${fromY}px, 0)` },
-    { transform: `translate3d(0, ${toY}px, 0)` }
-  ], {
-    duration,
-    easing: 'cubic-bezier(.22, 1, .36, 1)',
-    fill: 'forwards'
+function sendPullControl(message: Record<string, unknown>): void {
+  postParent(message);
+}
+
+function queuePanelPull(deltaY: number): void {
+  queuedPullDistance = Math.max(0, Math.min(window.innerHeight, deltaY));
+  pullCurrentDistance = queuedPullDistance;
+  if (pullFrame) return;
+  pullFrame = requestAnimationFrame(() => {
+    pullFrame = 0;
+    if (queuedPullDistance === null) return;
+    sendPull({ type: 'comment-ui:pull', phase: 'move', deltaY: queuedPullDistance });
+    queuedPullDistance = null;
   });
-  pullAnimation = animation;
-  void animation.finished.then(() => {
-    if (pullAnimation !== animation) return;
-    pullAnimation = null;
-    pullDistance = toY;
-    app.style.transform = toY === 0 ? '' : `translate3d(0, ${toY}px, 0)`;
-    animation.cancel();
-    onFinish?.();
-  }).catch(() => {
-    // A new touch may intentionally interrupt the settle animation.
-  });
+}
+
+function discardQueuedPanelPull(): void {
+  if (pullFrame) cancelAnimationFrame(pullFrame);
+  pullFrame = 0;
+  queuedPullDistance = null;
 }
 
 function cancelPanelPull(notify = true): void {
-  const wasPulling = pullingPanel || pullDistance > 0;
+  const wasPulling = pullingPanel;
+  const deltaY = pullCurrentDistance;
+  const velocityY = pullVelocityY;
+  discardQueuedPanelPull();
   clearPanelPullState();
   if (!wasPulling) return;
-  if (notify) postParent({ type: 'comment-ui:pull', phase: 'cancel' });
-  animatePanelPull(0, 180, clearPanelPullVisual);
+  if (notify) sendPullControl({ type: 'comment-ui:pull', phase: 'cancel', deltaY, velocityY });
 }
 
 function headers(includeAdmin = false): HeadersInit {
@@ -500,9 +491,14 @@ window.addEventListener('message', (event) => {
     adminToken = data.token;
     render();
   }
+  if (data.type === 'normalpics:drag-channel' && event.ports[0]) {
+    dragPort?.close();
+    dragPort = event.ports[0];
+    dragPort.start();
+  }
   if (data.type === 'normalpics:panel-reset') {
+    discardQueuedPanelPull();
     clearPanelPullState();
-    clearPanelPullVisual();
   }
 });
 
@@ -548,9 +544,9 @@ document.addEventListener('touchstart', (event) => {
   }
   const touch = event.touches[0];
   pullTouchId = touch.identifier;
-  pullAnchorX = touch.clientX;
-  pullAnchorY = touch.clientY;
-  pullLastY = touch.clientY;
+  pullAnchorX = touchX(touch);
+  pullAnchorY = touchY(touch);
+  pullLastY = touchY(touch);
   pullLastAt = performance.now();
   pullVelocityY = 0;
   pullAtTop = scrollTop() <= 1;
@@ -563,59 +559,53 @@ document.addEventListener('touchmove', (event) => {
   if (!touch) return;
 
   const now = performance.now();
+  const currentX = touchX(touch);
+  const currentY = touchY(touch);
   const atTop = scrollTop() <= 1;
   if (!pullingPanel && !atTop) {
     pullAtTop = false;
-    pullAnchorX = touch.clientX;
-    pullAnchorY = touch.clientY;
-    pullLastY = touch.clientY;
+    pullAnchorX = currentX;
+    pullAnchorY = currentY;
+    pullLastY = currentY;
     pullLastAt = now;
     return;
   }
   if (!pullAtTop) {
     pullAtTop = true;
-    pullAnchorX = touch.clientX;
-    pullAnchorY = touch.clientY;
-    pullLastY = touch.clientY;
+    pullAnchorX = currentX;
+    pullAnchorY = currentY;
+    pullLastY = currentY;
     pullLastAt = now;
     return;
   }
 
-  const deltaX = touch.clientX - pullAnchorX;
-  const deltaY = Math.max(0, touch.clientY - pullAnchorY);
+  const deltaX = currentX - pullAnchorX;
+  const deltaY = Math.max(0, currentY - pullAnchorY);
   if (!pullingPanel) {
     if (deltaY <= 7 || Math.abs(deltaY) <= Math.abs(deltaX) * 1.15) return;
     pullingPanel = true;
     document.documentElement.classList.add('panel-pulling');
-    postParent({ type: 'comment-ui:pull', phase: 'start' });
+    sendPullControl({ type: 'comment-ui:pull', phase: 'start' });
   }
 
   event.preventDefault();
   const elapsed = Math.max(8, now - pullLastAt);
-  pullVelocityY = (touch.clientY - pullLastY) / elapsed;
-  pullLastY = touch.clientY;
+  pullVelocityY = (currentY - pullLastY) / elapsed;
+  pullLastY = currentY;
   pullLastAt = now;
-  setPanelPull(deltaY);
+  queuePanelPull(deltaY);
 }, { capture: true, passive: false });
 
 document.addEventListener('touchend', (event) => {
   if (pullTouchId === null) return;
   const touch = Array.from(event.changedTouches).find((item) => item.identifier === pullTouchId);
   if (!touch) return;
-  const deltaY = Math.max(0, touch.clientY - pullAnchorY);
+  const deltaY = Math.max(0, touchY(touch) - pullAnchorY);
   if (pullingPanel) {
     event.preventDefault();
-    const shouldClose = deltaY > Math.min(120, window.innerHeight * 0.18) || pullVelocityY > 0.5;
+    discardQueuedPanelPull();
     clearPanelPullState();
-    if (shouldClose) {
-      animatePanelPull(window.innerHeight + 24, 180, () => {
-        postParent({ type: 'comment-ui:pull', phase: 'closed' });
-        pullResetTimer = window.setTimeout(clearPanelPullVisual, 280);
-      });
-    } else {
-      postParent({ type: 'comment-ui:pull', phase: 'cancel' });
-      animatePanelPull(0, 200, clearPanelPullVisual);
-    }
+    sendPullControl({ type: 'comment-ui:pull', phase: 'end', deltaY, velocityY: pullVelocityY });
     return;
   }
   clearPanelPullState();
