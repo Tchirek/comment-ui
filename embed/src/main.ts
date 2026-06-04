@@ -207,6 +207,7 @@ async function load(): Promise<void> {
       { headers: headers() }
     );
     if (requestedImageId === imageId) comments = response.items;
+    postParent({ type: 'comment-ui:loaded', imageId: requestedImageId });
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : '加载失败';
   } finally {
