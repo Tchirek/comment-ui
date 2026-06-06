@@ -86,7 +86,12 @@ async function load(): Promise<void> {
       state.comments = response.items;
       state.loadedImageId = requestedImageId;
     }
-    bridge.post({ type: 'comment-ui:loaded', imageId: requestedImageId, commentCount: response.items.length });
+    bridge.post({
+      type: 'comment-ui:loaded',
+      imageId: requestedImageId,
+      commentCount: response.items.length,
+      commentedByMe: Boolean(response.commentedByMe)
+    });
   } catch (error) {
     if (requestedImageId === state.imageId) {
       state.loadError = error instanceof Error ? error.message : '加载失败';

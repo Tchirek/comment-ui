@@ -58,8 +58,8 @@ export function createCommentApi(config: CommentUiConfig, context: ApiContext) {
   }
 
   return {
-    list(imageId: string): Promise<{ items: CommentItem[] }> {
-      return request<{ items: CommentItem[] }>(
+    list(imageId: string): Promise<{ items: CommentItem[]; commentedByMe?: boolean }> {
+      return request<{ items: CommentItem[]; commentedByMe?: boolean }>(
         `/api/comment?imageId=${encodeURIComponent(imageId)}`,
         { headers: headers() }
       );

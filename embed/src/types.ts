@@ -43,7 +43,7 @@ export interface PullMessage {
 
 export type ParentOutboundMessage =
   | { type: 'comment-ui:ready' }
-  | { type: 'comment-ui:loaded'; imageId: string; commentCount: number }
+  | { type: 'comment-ui:loaded'; imageId: string; commentCount: number; commentedByMe?: boolean }
   | { type: 'comment-ui:close' }
   | { type: 'comment-ui:request-admin' }
   | PullMessage;
