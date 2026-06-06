@@ -1,4 +1,4 @@
-# Sodesu for NormalPics
+# 💬 Sodesu for NormalPics
 
 A public AGPL fork of [Sodesu v0.5.2](https://github.com/BeiyanYunyi/sodesu), reshaped into a focused iframe comment UI for NormalPics and its Cloudflare Worker/D1 comment API.
 
