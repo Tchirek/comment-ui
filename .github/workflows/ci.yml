@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js for root package
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build root package
+        run: pnpm build
+
+      - name: Setup Node.js for embed package
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: embed/package-lock.json
+
+      - name: Install embed dependencies
+        working-directory: embed
+        run: npm ci
+
+      - name: Build embed package
+        working-directory: embed
+        run: npm run build
