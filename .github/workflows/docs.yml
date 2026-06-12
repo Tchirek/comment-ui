@@ -38,7 +38,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Install dependencies
-        run: pnpm i --prefer-offline
+        run: pnpm install --frozen-lockfile
       - name: Build sodesu
         run: pnpm build
       - name: Build page

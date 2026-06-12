@@ -190,14 +190,6 @@ input:focus, textarea:focus { border-color: rgba(255, 255, 255, 0.24); }
 @keyframes skeleton-glide {
   to { transform: translateX(100%); }
 }
-.comment-os {
-  padding: 3px 6px;
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.045);
-  font-size: 9px;
-  line-height: 1;
-}
 .comment-head time { color: rgba(255, 255, 255, 0.32); font-size: 9px; }
 .comment-actions { margin-top: 7px; gap: 2px; }
 .comment-actions .like-button {

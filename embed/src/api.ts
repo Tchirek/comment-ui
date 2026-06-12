@@ -21,7 +21,6 @@ interface CommentPublishPayload {
   nickname: string;
   content: string;
   parentId: string | null;
-  operatingSystem: string;
 }
 
 function joinUrl(origin: string, path: string): string {

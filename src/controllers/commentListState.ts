@@ -17,6 +17,11 @@ const sortKeyMap: Record<WalineCommentSorting, SortKey> = {
 
 export const sortingMethods = Object.keys(sortKeyMap) as WalineCommentSorting[];
 
+function readCommentTime(data: WalineComment): number {
+  if ('time' in data && typeof data.time === 'number') return data.time;
+  return 0;
+}
+
 interface ReactiveCommentData {
   /**
    * User Nickname
@@ -93,7 +98,7 @@ export function makeDataReactive(data: WalineComment): ReactiveComment {
   const [orig, setOrig] = createSignal(data.orig);
   return {
     ...data,
-    time: (data as unknown as { time: number }).time,
+    time: readCommentTime(data),
     children,
     setChildren,
     like,

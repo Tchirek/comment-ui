@@ -64,6 +64,8 @@
     "src"
   ],
   "scripts": {
+    "audit:hardening": "node scripts/audit-hardening.mjs",
+    "audit:public-export": "node scripts/audit-public-safety.mjs",
     "start": "vite",
     "dev": "vite",
     "build": "tsc && tsx scripts/vBuild.ts",
@@ -75,7 +77,9 @@
     "solid-js": "^1.9.3"
   },
   "dependencies": {
-    "@waline/api": "1.0.0"
+    "@waline/api": "1.0.0",
+    "micromark": "4.0.2",
+    "micromark-extension-gfm": "3.0.0"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^5.4.1",
@@ -113,7 +117,6 @@
     "typescript": "^5.9.3",
     "unified": "^11.0.5",
     "unocss": "^66.5.2",
-    "user-agent-data-types": "^0.4.2",
     "vite": "^7.1.9",
     "vite-bundle-analyzer": "^1.2.3",
     "vite-plugin-dts": "^4.5.4",

@@ -4,7 +4,6 @@ export interface CommentItem {
   rootId: string;
   parentId: string | null;
   nickname: string;
-  operatingSystem: string;
   content: string;
   html: string;
   createdAt: number;

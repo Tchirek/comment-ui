@@ -72,13 +72,10 @@ function createCommentNode(
   head.className = 'comment-head';
   const name = document.createElement('strong');
   name.textContent = displayName;
-  const operatingSystem = document.createElement('span');
-  operatingSystem.className = 'comment-os';
-  operatingSystem.textContent = item.operatingSystem || '未知系统';
   const time = document.createElement('time');
   time.dateTime = new Date(item.createdAt).toISOString();
   time.textContent = formatTime(item.createdAt);
-  head.append(name, operatingSystem, time);
+  head.append(name, time);
 
   const body = document.createElement('div');
   body.className = 'markdown';

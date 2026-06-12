@@ -15,5 +15,5 @@ run_worker_first = true
 
 [vars]
 COMMENT_API_ORIGIN = "https://api.pics.tchirek.top"
-COMMENT_FRAME_ANCESTORS = "https://sicnu.pics.tchirek.top https://photohost-frontend.pages.dev"
+COMMENT_FRAME_ANCESTORS = "https://sicnu.pics.tchirek.top https://photohost-frontend.pages.dev https://sicnu.docs.tchirek.top https://normaldocs-frontend.pages.dev"
 COMMENT_IMG_SRC = "https: data:"

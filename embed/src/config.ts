@@ -13,6 +13,7 @@ export interface CommentUiConfig {
   allowedParentOrigins: Set<string>;
   sourceRepoUrl: string;
   nicknameStorageKey: string;
+  commentedImagesStorageKey: string;
   title: string;
   anonymousNickname: string;
 }
@@ -25,6 +26,21 @@ declare global {
 
 const DEFAULT_STORAGE_NAMESPACE = 'comment_ui';
 const DEFAULT_SOURCE_REPO_URL = 'https://github.com/Tchirek/comment-ui';
+
+const PRESETS: Record<string, RawCommentUiConfig & { storageNamespace?: string }> = {
+  normalpics: {
+    apiOrigin: 'https://api.pics.tchirek.top',
+    allowedParentOrigins: ['https://sicnu.pics.tchirek.top'],
+    storageNamespace: 'normalpics_comment_ui',
+    title: '评论'
+  },
+  normaldocs: {
+    apiOrigin: 'https://api.docs.tchirek.top',
+    allowedParentOrigins: ['https://sicnu.docs.tchirek.top'],
+    storageNamespace: 'normaldocs_comment_ui',
+    title: '评论'
+  }
+};
 
 function env(): Record<string, string | undefined> {
   return ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {});
@@ -63,7 +79,9 @@ function readOrigins(raw: RawCommentUiConfig, runtimeEnv: Record<string, string 
 
 export function readConfig(): CommentUiConfig {
   const runtimeEnv = env();
-  const raw = window.COMMENT_UI_CONFIG ?? {};
+  const presetName = new URLSearchParams(window.location.search).get('preset') || '';
+  const preset = PRESETS[presetName] || {};
+  const raw = { ...preset, ...(window.COMMENT_UI_CONFIG ?? {}) };
   const storageNamespace = raw.storageNamespace || runtimeEnv.VITE_STORAGE_NAMESPACE || DEFAULT_STORAGE_NAMESPACE;
 
   return {
@@ -71,6 +89,7 @@ export function readConfig(): CommentUiConfig {
     allowedParentOrigins: readOrigins(raw, runtimeEnv),
     sourceRepoUrl: raw.sourceRepoUrl || runtimeEnv.VITE_SOURCE_REPO_URL || DEFAULT_SOURCE_REPO_URL,
     nicknameStorageKey: raw.nicknameStorageKey || `${storageNamespace}_nickname`,
+    commentedImagesStorageKey: `${storageNamespace}_commented_images`,
     title: raw.title || runtimeEnv.VITE_COMMENT_TITLE || '评论',
     anonymousNickname: raw.anonymousNickname || runtimeEnv.VITE_ANONYMOUS_NICKNAME || 'Anonymous'
   };

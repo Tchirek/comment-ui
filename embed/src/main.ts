@@ -4,7 +4,6 @@ import { readConfig } from './config';
 import { commentNickname, renderComments } from './comments';
 import { mountApp } from './dom';
 import { renderSafeMarkdown } from './markdown';
-import { detectOperatingSystem } from './os';
 import { installPanelPull } from './panelPull';
 import { createParentBridge } from './parentBridge';
 import type { CommentAppState, CommentItem, ParentMessage } from './types';
@@ -33,6 +32,27 @@ const state: CommentAppState = {
   loadError: '',
   previewing: false
 };
+
+function readCommentedImages(): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(config.commentedImagesStorageKey) || '[]');
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((item): item is string => typeof item === 'string' && item.length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
+function hasLocalCommentedImage(imageId: string): boolean {
+  return readCommentedImages().has(imageId);
+}
+
+function markLocalCommentedImage(imageId: string): void {
+  const values = readCommentedImages();
+  values.add(imageId);
+  const compact = Array.from(values).slice(-500);
+  localStorage.setItem(config.commentedImagesStorageKey, JSON.stringify(compact));
+}
 
 function formatCooldown(value: number | null): string {
   const milliseconds = Math.max(1_000, value || 0);
@@ -90,7 +110,7 @@ async function load(): Promise<void> {
       type: 'comment-ui:loaded',
       imageId: requestedImageId,
       commentCount: response.items.length,
-      commentedByMe: Boolean(response.commentedByMe)
+      commentedByMe: Boolean(response.commentedByMe) || hasLocalCommentedImage(requestedImageId)
     });
   } catch (error) {
     if (requestedImageId === state.imageId) {
@@ -118,14 +138,13 @@ async function publish(): Promise<void> {
   elements.status.textContent = '';
 
   try {
-    const operatingSystem = await detectOperatingSystem();
     await api.publish({
       imageId: state.imageId,
       nickname: name,
       content,
-      parentId: state.replyTo?.id || null,
-      operatingSystem
+      parentId: state.replyTo?.id || null
     });
+    markLocalCommentedImage(state.imageId);
 
     if (rawName) localStorage.setItem(config.nicknameStorageKey, rawName);
     else localStorage.removeItem(config.nicknameStorageKey);

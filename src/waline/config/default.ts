@@ -8,6 +8,7 @@ import type {
 } from '../typings/index.js';
 
 const AVAILABLE_META: WalineMeta[] = ['nick', 'mail', 'link'];
+const DEFAULT_GIPHY_API_KEY = '';
 
 export const getMeta = (meta: WalineMeta[]): WalineMeta[] =>
   meta.filter((item) => AVAILABLE_META.includes(item));
@@ -62,14 +63,16 @@ export const getDefaultSearchOptions = (lang: string): WalineSearchOptions => {
   const fetchGiphy = async (
     url: string,
     params: Record<string, string> = {},
-  ): Promise<WalineSearchResult> =>
-    fetch(
+  ): Promise<WalineSearchResult> => {
+    if (!DEFAULT_GIPHY_API_KEY) return [];
+
+    return fetch(
       `https://api.giphy.com/v1/gifs/${url}?${new URLSearchParams({
         lang,
         limit: '20',
         rating: 'g',
         // eslint-disable-next-line @typescript-eslint/naming-convention
-        api_key: '6CIMLkNMMOhRcXPoMCPkFy4Ybk2XUiMp',
+        api_key: DEFAULT_GIPHY_API_KEY,
         ...params,
       }).toString()}`,
     )
@@ -80,6 +83,7 @@ export const getDefaultSearchOptions = (lang: string): WalineSearchOptions => {
           src: gif.images.downsized_medium.url,
         })),
       );
+  };
 
   return {
     search: (word: string): Promise<WalineSearchResult> =>
