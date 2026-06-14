@@ -200,6 +200,10 @@ input:focus, textarea:focus { border-color: rgba(255, 255, 255, 0.24); }
   justify-content: center;
   gap: 4px;
   padding: 4px 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .comment-actions .like-button svg {
   width: 14px;

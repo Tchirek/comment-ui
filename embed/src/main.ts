@@ -19,6 +19,7 @@ const api = createCommentApi(config, {
   adminToken: () => state.adminToken
 });
 const panelPull = installPanelPull(elements.app, bridge);
+const pendingLikes = new Set<string>();
 
 const state: CommentAppState = {
   imageId: '',
@@ -165,13 +166,25 @@ async function publish(): Promise<void> {
 }
 
 async function toggleLike(item: CommentItem): Promise<void> {
+  if (pendingLikes.has(item.id)) return;
+  const previous = { likedByMe: item.likedByMe, likeCount: item.likeCount };
+  const nextLiked = !item.likedByMe;
+  item.likedByMe = nextLiked;
+  item.likeCount = Math.max(0, item.likeCount + (nextLiked ? 1 : -1));
+  pendingLikes.add(item.id);
+  render();
   try {
-    const result = await api.setLike(item.id, !item.likedByMe);
+    const result = await api.setLike(item.id, nextLiked);
     item.likedByMe = result.likedByMe;
     item.likeCount = result.likeCount;
     render();
   } catch {
+    item.likedByMe = previous.likedByMe;
+    item.likeCount = previous.likeCount;
+    render();
     elements.status.textContent = '操作失败';
+  } finally {
+    pendingLikes.delete(item.id);
   }
 }
 
